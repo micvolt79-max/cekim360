@@ -2,11 +2,35 @@
 // Kamerayı açar, seçilen lens ve kare hızıyla süreli kayıt yapar,
 // kayıt bitince videoyu aynı Wi-Fi'daki laptop programına gönderir.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Pressable, StatusBar, StyleSheet, Text, TextInput, View, Linking } from 'react-native';
-import { Camera, useCameraDevices, useCameraFormat, useCameraPermission } from 'react-native-vision-camera';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Component, useEffect, useMemo, useRef, useState } from 'react';
+import { Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Linking } from 'react-native';
 import { useKeepAwake } from 'expo-keep-awake';
+
+// ---- Hata yakalama: bir sorun olursa siyah ekran yerine hatayı ekranda göster ----
+let sonHata = null;
+const hataDinleyicileri = new Set();
+function hataBildir(e) {
+  sonHata = e;
+  hataDinleyicileri.forEach((f) => f(e));
+}
+if (global.ErrorUtils && global.ErrorUtils.setGlobalHandler) {
+  global.ErrorUtils.setGlobalHandler((e) => hataBildir(e));
+}
+
+// Yerel modülleri güvenli yükle: biri eksikse uygulama çökmesin, sebebini göstersin
+let VC = null;
+let AsyncStorage = null;
+try {
+  VC = require('react-native-vision-camera');
+} catch (e) {
+  hataBildir(new Error('Kamera modülü yüklenemedi: ' + (e?.message || e)));
+}
+try {
+  AsyncStorage = require('@react-native-async-storage/async-storage').default;
+} catch (e) {
+  AsyncStorage = null; // ayarlar kaydedilmez ama uygulama çalışır
+}
+const zamanAsimi = (p, ms) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('zaman aşımı')), ms))]);
 
 const RENK = { bg: '#000', panel: 'rgba(20,16,28,0.85)', line: '#3a3248', fg: '#f4eee6', muted: '#a99fb5', accent: '#e6c48a', ink: '#2a1f0e', rec: '#e5484d', ok: '#8fd19e', err: '#f0938a' };
 const SURELER = [5, 8, 10, 15];
@@ -26,10 +50,46 @@ function lensAdi(d) {
   return null;
 }
 
-export default function App() {
+// Uygulamanın kökü: hata varsa hata ekranını, yoksa kamerayı gösterir
+export default function Kok() {
+  const [hata, setHata] = useState(sonHata);
+  useEffect(() => {
+    hataDinleyicileri.add(setHata);
+    return () => hataDinleyicileri.delete(setHata);
+  }, []);
+  if (hata || !VC) return <HataEkrani hata={hata || new Error('Kamera modülü bulunamadı')} />;
+  return (
+    <HataSiniri>
+      <App />
+    </HataSiniri>
+  );
+}
+
+class HataSiniri extends Component {
+  constructor(p) { super(p); this.state = { hata: null }; }
+  static getDerivedStateFromError(hata) { return { hata }; }
+  render() { return this.state.hata ? <HataEkrani hata={this.state.hata} /> : this.props.children; }
+}
+
+function HataEkrani({ hata }) {
+  return (
+    <View style={[s.tam, { paddingTop: 70, paddingHorizontal: 20 }]}>
+      <StatusBar barStyle="light-content" />
+      <Text style={[s.modalBaslik, { color: RENK.err }]}>Uygulamada hata oluştu</Text>
+      <Text style={[s.aciklama, { marginVertical: 12 }]}>Bu ekranın görüntüsünü al ve gönder.</Text>
+      <ScrollView style={{ flex: 1 }}>
+        <Text style={{ color: RENK.fg, fontSize: 13 }} selectable>
+          {String(hata?.message || hata)}{'\n\n'}{String(hata?.stack || '').slice(0, 3000)}
+        </Text>
+      </ScrollView>
+    </View>
+  );
+}
+
+function App() {
   useKeepAwake(); // çekim sırasında ekran kararmasın
-  const { hasPermission, requestPermission } = useCameraPermission();
-  const tumKameralar = useCameraDevices();
+  const { hasPermission, requestPermission } = VC.useCameraPermission();
+  const tumKameralar = VC.useCameraDevices();
   const kamera = useRef(null);
 
   const [hazir, setHazir] = useState(false); // kayıtlı ayarlar yüklendi mi
@@ -51,7 +111,8 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const k = await AsyncStorage.multiGet(['adres', 'sure', 'fps', 'geri', 'kamera']);
+        if (!AsyncStorage) throw new Error('ayar deposu yok');
+        const k = await zamanAsimi(AsyncStorage.multiGet(['adres', 'sure', 'fps', 'geri', 'kamera']), 2500);
         const v = Object.fromEntries(k);
         if (v.adres) setAdres(v.adres);
         if (v.sure) setSure(+v.sure);
@@ -62,7 +123,9 @@ export default function App() {
       setHazir(true);
     })();
   }, []);
-  const kaydet = (anahtar, deger) => AsyncStorage.setItem(anahtar, String(deger)).catch(() => {});
+  const kaydet = (anahtar, deger) => {
+    try { AsyncStorage?.setItem(anahtar, String(deger)).catch(() => {}); } catch (e) {}
+  };
 
   // Seçilebilir lensler: önce geniş açı, sonra normal, yakın, ön
   const lensler = useMemo(() => {
@@ -73,7 +136,7 @@ export default function App() {
   }, [tumKameralar]);
 
   const cihaz = lensler.find((d) => d.id === kameraId) || lensler[0];
-  const format = useCameraFormat(cihaz, [{ fps: hedefFps }, { videoResolution: { width: 1920, height: 1080 } }]);
+  const format = VC.useCameraFormat(cihaz, [{ fps: hedefFps }, { videoResolution: { width: 1920, height: 1080 } }]);
   const gercekFps = Math.max(1, Math.min(hedefFps, format?.maxFps ?? 30));
 
   function lensDegistir() {
@@ -172,7 +235,14 @@ export default function App() {
   }
 
   // ---------- Ekranlar ----------
-  if (!hazir) return <View style={s.tam} />;
+  if (!hazir) {
+    return (
+      <View style={[s.tam, s.orta]}>
+        <StatusBar barStyle="light-content" />
+        <Text style={s.aciklama}>Yükleniyor…</Text>
+      </View>
+    );
+  }
 
   if (!hasPermission) {
     return (
@@ -189,7 +259,8 @@ export default function App() {
   if (!cihaz) {
     return (
       <View style={[s.tam, s.orta]}>
-        <Text style={s.aciklama}>Kamera bulunamadı.</Text>
+        <StatusBar barStyle="light-content" />
+        <Text style={s.aciklama}>Kamera aranıyor… Bu yazı birkaç saniyeden uzun kalırsa uygulamayı kapatıp yeniden aç.</Text>
       </View>
     );
   }
@@ -197,7 +268,7 @@ export default function App() {
   return (
     <View style={s.tam}>
       <StatusBar hidden />
-      <Camera
+      <VC.Camera
         ref={kamera}
         style={StyleSheet.absoluteFill}
         device={cihaz}
