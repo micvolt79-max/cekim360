@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>360 Videon</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Manrope:wght@400;600&display=swap">
+<style>
+/* QR ile açılan indirme sayfası: video sayfanın içinde oynar, altında Kaydet düğmesi */
+:root{
+  --bg:#14101c; --panel:#1f1a2b; --line:#3a3248; --fg:#f4eee6; --muted:#a99fb5;
+  --accent:#e6c48a; --accent-fg:#14101c;
+  --display:"Unbounded","Arial Black",system-ui,sans-serif;
+  --body:"Manrope","Segoe UI",system-ui,sans-serif;
+  color-scheme:dark;
+}
+html,body{min-height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);padding:16px;box-sizing:border-box;
+  padding-top:max(16px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom))}
+main{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:16px;align-items:center;text-align:center}
+h1{font-family:var(--display);font-weight:700;font-size:22px;margin:4px 0 0;text-wrap:balance}
+.kutu{position:relative;width:100%;aspect-ratio:9/16;max-height:70vh;border-radius:18px;overflow:hidden;background:var(--panel);border:1px solid var(--line)}
+video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
+.bekle{position:absolute;inset:0;display:grid;place-items:center;padding:24px;color:var(--muted);line-height:1.5}
+.cark{width:42px;height:42px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);margin:0 auto 14px;animation:don 1s linear infinite}
+@keyframes don{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.cark{animation:none}}
+[hidden]{display:none!important}
+.dugme{display:block;width:100%;box-sizing:border-box;padding:16px;border:0;border-radius:14px;background:var(--accent);color:var(--accent-fg);
+  font:600 17px var(--body);text-decoration:none;cursor:pointer}
+.dugme[aria-disabled="true"]{opacity:.5;pointer-events:none}
+.ipucu{color:var(--muted);font-size:14px;line-height:1.5;margin:0}
+</style>
+</head>
+<body>
+<main>
+  <h1 id="marka">360 Videon</h1>
+  <div class="kutu">
+    <video id="vid" playsinline loop muted autoplay controls preload="auto" hidden></video>
+    <div class="bekle" id="bekle"><div><div class="cark" aria-hidden="true"></div><span id="bekleYazi">Videon hazırlanıyor, birkaç saniye sürebilir…</span></div></div>
+  </div>
+  <a class="dugme" id="kaydet" href="#" aria-disabled="true">Videoyu Kaydet</a>
+  <p class="ipucu" id="ipucu">iPhone'da: Videoyu Kaydet'e dokun, açılan menüden “Videoyu Kaydet”i seç.</p>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const p = new URLSearchParams(location.search);
+const id = p.get('id') || '';
+if(p.get('m')){ $('marka').textContent = p.get('m'); document.title = p.get('m'); }
+
+// Drive'daki dosyanın doğrudan adresi (paylaşımı "linke sahip herkes" açık)
+const kaynak = 'https://drive.usercontent.google.com/download?id=' + encodeURIComponent(id) + '&export=download';
+const ad = '360-video.mp4';
+let dosya = null;     // paylaşım menüsü için önceden indirilen video
+let deneme = 0;
+
+const v = $('vid'), kaydet = $('kaydet');
+
+function yukle(){
+  // Video henüz Drive'a yüklenmediyse hata verir; birkaç saniyede bir yeniden denenir
+  v.src = kaynak + '&t=' + Date.now();
+  v.load();
+}
+v.addEventListener('loadeddata', () => {
+  $('bekle').hidden = true; v.hidden = false;
+  v.play().catch(()=>{});
+  kaydet.href = kaynak; kaydet.setAttribute('download', ad); kaydet.removeAttribute('aria-disabled');
+  onceden_indir();
+});
+v.addEventListener('error', () => {
+  deneme++;
+  if(deneme > 60){ // ~4 dakika
+    $('bekleYazi').textContent = 'Video şu an açılamadı. Biraz sonra QR kodu tekrar okutabilirsin.';
+    return;
+  }
+  setTimeout(yukle, 4000);
+});
+
+// Paylaşım menüsü (iPhone'da "Videoyu Kaydet" ile Fotoğraflar'a kaydeder) için videoyu önceden al.
+// Tarayıcı izin vermezse düğme normal indirme linki olarak çalışır.
+async function onceden_indir(){
+  try{
+    if(!navigator.canShare) return;
+    const r = await fetch(kaynak);
+    if(!r.ok) return;
+    const f = new File([await r.blob()], ad, {type:'video/mp4'});
+    if(navigator.canShare({files:[f]})) dosya = f;
+  }catch(e){}
+}
+kaydet.addEventListener('click', async e => {
+  if(!dosya) return; // normal indirme
+  e.preventDefault();
+  try{ await navigator.share({files:[dosya]}); }
+  catch(err){ if(err && err.name !== 'AbortError') location.href = kaynak; }
+});
+
+if(id){ yukle(); } else { $('bekleYazi').textContent = 'Video bulunamadı. QR kodu tekrar okut.'; }
+</script>
+</body>
+</html>
