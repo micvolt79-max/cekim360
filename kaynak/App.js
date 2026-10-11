@@ -452,7 +452,7 @@ function QrEkrani({ qr, kapat }) {
         {!yuklendi && <Text style={[s.aciklama, s.qrBekle]}>{deneme < 30 ? 'QR hazırlanıyor…' : 'QR alınamadı. Kiosktaki QR\'ı okut.'}</Text>}
       </View>
       <Text style={s.qrYazi}>Telefonunun kamerasını QR'a tut, videonu indir.</Text>
-      <Text style={s.qrUyari}>Videona daha sonra tekrar ulaşmak için bu QR'ın ekran görüntüsünü almayı unutma.</Text>
+      <Text style={s.qrUyari}>Videona daha sonra tekrar ulaşmak için bu QR'ın ekran görüntüsünü almayı unutma 📸✨</Text>
       <Pressable style={s.anaButon} onPress={kapat}>
         <Text style={s.anaButonYazi}>Kapat, yeni çekim</Text>
       </Pressable>
