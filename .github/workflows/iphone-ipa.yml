@@ -62,6 +62,8 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R "$RUNNER_TEMP"/uygulama.xcarchive/Products/Applications/*.app Payload/
+          # Uygulamanın JavaScript paketi içinde mi? Yoksa telefonda siyah ekranda kalır.
+          ls -lh Payload/*.app/main.jsbundle || { echo "HATA: main.jsbundle yok, JS paketi derlemeye girmemiş"; exit 1; }
           zip -qry cekim360.ipa Payload
           ls -lh cekim360.ipa
 
