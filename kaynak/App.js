@@ -228,6 +228,7 @@ function App() {
       const bitti = new Promise((resolve, reject) => {
         kamera.current.startRecording({
           fileType: 'mp4',
+          videoCodec: 'h264', // her tarayıcıda oynar (HEVC Windows Chrome'da oynamıyor)
           onRecordingFinished: resolve,
           onRecordingError: reject,
         });
