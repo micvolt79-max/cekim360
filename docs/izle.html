@@ -19,7 +19,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);paddi
   padding-top:max(16px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom))}
 main{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:16px;align-items:center;text-align:center}
 h1{font-family:var(--display);font-weight:700;font-size:22px;margin:4px 0 0;text-wrap:balance}
-.kutu{position:relative;width:100%;aspect-ratio:9/16;max-height:70vh;border-radius:18px;overflow:hidden;background:var(--panel);border:1px solid var(--line)}
+.kutu{position:relative;width:auto;height:56vh;max-width:100%;aspect-ratio:9/16;max-height:56vh;border-radius:18px;overflow:hidden;background:var(--panel);border:1px solid var(--line)}
 video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
 .bekle{position:absolute;inset:0;display:grid;place-items:center;padding:24px;color:var(--muted);line-height:1.5}
 .kapak{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
@@ -32,6 +32,10 @@ video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
 .dugme{display:block;width:100%;box-sizing:border-box;padding:16px;border:0;border-radius:14px;background:var(--accent);color:var(--accent-fg);
   font:600 17px var(--body);text-decoration:none;cursor:pointer}
 .dugme[aria-disabled="true"]{opacity:.5;pointer-events:none}
+.tekrar{display:flex;gap:14px;align-items:center;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;width:100%;box-sizing:border-box}
+.tekrar #sayfaQr{flex:none;width:96px;height:96px;background:#fff;border-radius:10px;padding:6px;box-sizing:border-box;line-height:0}
+.tekrar #sayfaQr img,.tekrar #sayfaQr svg{width:100%;height:100%}
+.tekrar p{margin:0;font-size:14px;line-height:1.45;color:var(--fg)}
 .ipucu{color:var(--muted);font-size:14px;line-height:1.5;margin:0}
 </style>
 </head>
@@ -45,7 +49,12 @@ video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
   </div>
   <a class="dugme" id="kaydet" href="#" aria-disabled="true">Videoyu Kaydet</a>
   <p class="ipucu" id="ipucu">Videoyu Kaydet'e dokun, video telefonuna kaydedilir.</p>
+  <div class="tekrar" id="tekrar" hidden>
+    <div id="sayfaQr" aria-hidden="true"><img id="sayfaQrResim" alt=""></div>
+    <p><strong>Ekran görüntüsü almayı unutma.</strong><br>Videona daha sonra tekrar ulaşmak için bu ekranın görüntüsünü al.</p>
+  </div>
 </main>
+
 
 <script>
 const $ = id => document.getElementById(id);
@@ -133,6 +142,19 @@ kaydet.addEventListener('click', async e => {
   try{ await navigator.share({files:[dosya]}); }
   catch(err){ if(err && err.name !== 'AbortError') location.href = kaynak; }
 });
+
+// Bu sayfanın kendi QR'ı: ekran görüntüsünden daha sonra tekrar açılabilsin
+// (laptop bu QR resmini videodan hemen sonra Drive'a yükler; gelene kadar kutu gizli kalır)
+const qrId = p.get('q');
+if(qrId){
+  const adresler = ['https://lh3.googleusercontent.com/d/' + encodeURIComponent(qrId),
+                    'https://drive.usercontent.google.com/download?id=' + encodeURIComponent(qrId) + '&export=view'];
+  const r = $('sayfaQrResim');
+  let qd = 0;
+  r.onload = () => { $('tekrar').hidden = false; };
+  r.onerror = () => { qd++; if(qd < 60) setTimeout(() => { const a = adresler[qd % 2]; r.src = a + (a.includes('?') ? '&' : '?') + 't=' + Date.now(); }, qd < 2 ? 0 : 3000); };
+  r.src = adresler[0];
+}
 
 if(id){ yukle(); } else { $('bekleYazi').textContent = 'Video bulunamadı. QR kodu tekrar okut.'; }
 </script>

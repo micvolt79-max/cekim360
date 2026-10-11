@@ -3,7 +3,7 @@
 // kayıt bitince videoyu aynı Wi-Fi'daki laptop programına gönderir.
 
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Linking } from 'react-native';
+import { Image, Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Linking } from 'react-native';
 import { useKeepAwake } from 'expo-keep-awake';
 
 // ---- Hata yakalama: bir sorun olursa siyah ekran yerine hatayı ekranda göster ----
@@ -152,6 +152,7 @@ function App() {
   const [ayarAcik, setAyarAcik] = useState(false);
   const [adresTaslak, setAdresTaslak] = useState('');
   const [baglanti, setBaglanti] = useState('araniyor'); // araniyor | bagli | yok
+  const [qr, setQr] = useState(null); // çekimden sonra gösterilen QR: { ad, hedef }
   const adresRef = useRef(adres);
   adresRef.current = adres;
 
@@ -260,13 +261,15 @@ function App() {
       setDurum({ metin: 'Video dosyası okunamadı.', tur: 'err' });
       return;
     }
-    let sonuc = await yukle(blob, adresRef.current);
+    let hedef = adresRef.current;
+    let sonuc = await yukle(blob, hedef);
     if (sonuc.tur === 'ag') {
       // Bağlantı koptu: laptopu yeniden ara ve bir kez daha dene
       setDurum({ metin: 'Laptop aranıyor…', tur: '' });
       const yeni = await otomatikBaglan();
       if (yeni) {
         setDurum({ metin: 'Laptopa gönderiliyor…', tur: '' });
+        hedef = yeni;
         sonuc = await yukle(blob, yeni);
       }
     }
@@ -274,6 +277,7 @@ function App() {
       setIlerleme(1);
       setBaglanti('bagli');
       setDurum({ metin: 'Gönderildi, kioskta oynuyor.', tur: 'ok' });
+      if (sonuc.ad) setQr({ ad: sonuc.ad, hedef });
     } else if (sonuc.tur === 'sunucu') {
       setDurum({ metin: 'Gönderilemedi: ' + sonuc.mesaj, tur: 'err' });
     } else {
@@ -292,7 +296,12 @@ function App() {
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) setIlerleme(e.loaded / e.total);
       };
-      xhr.onload = () => resolve(xhr.status === 200 ? { tur: 'ok' } : { tur: 'sunucu', mesaj: xhr.responseText });
+      xhr.onload = () => {
+        if (xhr.status !== 200) return resolve({ tur: 'sunucu', mesaj: xhr.responseText });
+        let ad = null;
+        try { ad = JSON.parse(xhr.responseText).ad; } catch (e) {}
+        resolve({ tur: 'ok', ad });
+      };
       xhr.onerror = () => resolve({ tur: 'ag' });
       xhr.ontimeout = () => resolve({ tur: 'ag' });
       xhr.send(blob);
@@ -408,6 +417,9 @@ function App() {
         )}
       </View>
 
+      {/* Çekimden sonra QR: görevli telefonu misafire uzatır */}
+      {qr && <QrEkrani qr={qr} kapat={() => setQr(null)} />}
+
       {/* Ayarlar */}
       <AyarEkrani
         acik={ayarAcik}
@@ -418,6 +430,32 @@ function App() {
         test={baglantiTest}
         bul={() => laptopBul(adresRef.current)}
       />
+    </View>
+  );
+}
+
+function QrEkrani({ qr, kapat }) {
+  // Laptop linki hazırlayana kadar (genelde 1-2 sn) QR resmi birkaç kez istenir
+  const [deneme, setDeneme] = useState(0);
+  const [yuklendi, setYuklendi] = useState(false);
+  const adres = `http://${qr.hedef}/api/qr.png?ad=${encodeURIComponent(qr.ad)}&d=${deneme}`;
+  return (
+    <View style={s.qrArka}>
+      <Text style={s.qrBaslik}>Videon hazır!</Text>
+      <View style={s.qrKutu}>
+        <Image
+          source={{ uri: adres }}
+          style={[s.qrResim, !yuklendi && { opacity: 0 }]}
+          onLoad={() => setYuklendi(true)}
+          onError={() => { if (deneme < 30) setTimeout(() => setDeneme((d) => d + 1), 1000); }}
+        />
+        {!yuklendi && <Text style={[s.aciklama, s.qrBekle]}>{deneme < 30 ? 'QR hazırlanıyor…' : 'QR alınamadı. Kiosktaki QR\'ı okut.'}</Text>}
+      </View>
+      <Text style={s.qrYazi}>Telefonunun kamerasını QR'a tut, videonu indir.</Text>
+      <Text style={s.qrUyari}>Videona daha sonra tekrar ulaşmak için bu QR'ın ekran görüntüsünü almayı unutma.</Text>
+      <Pressable style={s.anaButon} onPress={kapat}>
+        <Text style={s.anaButonYazi}>Kapat, yeni çekim</Text>
+      </Pressable>
     </View>
   );
 }
@@ -501,5 +539,12 @@ const s = StyleSheet.create({
   modal: { backgroundColor: '#1f1a2b', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 44, gap: 14 },
   modalBaslik: { color: RENK.fg, fontSize: 20, fontWeight: '700', textAlign: 'center' },
   girdi: { backgroundColor: '#14101c', color: RENK.fg, borderColor: RENK.line, borderWidth: 1, borderRadius: 12, padding: 14, fontSize: 18 },
+  qrArka: { ...StyleSheet.absoluteFillObject, backgroundColor: RENK.bg, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 18 },
+  qrBaslik: { color: RENK.fg, fontSize: 28, fontWeight: '800', textAlign: 'center' },
+  qrKutu: { width: 280, height: 280, backgroundColor: '#fff', borderRadius: 20, padding: 14, alignItems: 'center', justifyContent: 'center' },
+  qrResim: { width: 252, height: 252 },
+  qrBekle: { position: 'absolute', color: '#5b5368' },
+  qrYazi: { color: RENK.accent, fontSize: 18, fontWeight: '700', textAlign: 'center' },
+  qrUyari: { color: RENK.muted, fontSize: 15, textAlign: 'center', lineHeight: 21, maxWidth: 320 },
   modalButonlar: { flexDirection: 'row', gap: 12, justifyContent: 'center' },
 });
