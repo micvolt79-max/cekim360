@@ -24,6 +24,7 @@ video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
 .bekle{position:absolute;inset:0;display:grid;place-items:center;padding:24px;color:var(--muted);line-height:1.5}
 .kapak{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 .bekle.ustte{background:linear-gradient(transparent 45%,rgba(20,16,28,.85));place-items:end center;color:var(--fg)}
+.kutu iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000}
 .cark{width:42px;height:42px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);margin:0 auto 14px;animation:don 1s linear infinite}
 @keyframes don{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.cark{animation:none}}
@@ -57,6 +58,7 @@ const kaynak = 'https://drive.usercontent.google.com/download?id=' + encodeURICo
 const ad = '360-video.mp4';
 let dosya = null;     // paylaşım menüsü için önceden indirilen video
 let deneme = 0;
+let videoAcik = false;
 
 const v = $('vid'), kaydet = $('kaydet');
 
@@ -72,11 +74,14 @@ $('ipucu').textContent = iphone
 // Kapak resmi: video yüklenene kadar misafir kendi görüntüsünü görür (Drive'a videodan önce yüklenir)
 const kapakId = p.get('p');
 if(kapakId){
-  const k = $('kapak'), kapakAdres = 'https://drive.usercontent.google.com/download?id=' + encodeURIComponent(kapakId) + '&export=view';
+  // İki farklı Google adresi sırayla denenir (biri başka sitelerde gösterilmeyi engelleyebiliyor)
+  const adresler = ['https://lh3.googleusercontent.com/d/' + encodeURIComponent(kapakId),
+                    'https://drive.usercontent.google.com/download?id=' + encodeURIComponent(kapakId) + '&export=view'];
+  const k = $('kapak');
   let kd = 0;
-  k.onload = () => { k.hidden = false; $('bekle').classList.add('ustte'); v.poster = k.src; };
-  k.onerror = () => { if(++kd < 30) setTimeout(() => { k.src = kapakAdres + '&t=' + Date.now(); }, 3000); };
-  k.src = kapakAdres;
+  k.onload = () => { if(!videoAcik){ k.hidden = false; $('bekle').classList.add('ustte'); } v.poster = k.src; };
+  k.onerror = () => { kd++; if(kd < 40) setTimeout(() => { k.src = adresler[kd % 2] + (kd > 1 ? (adresler[kd % 2].includes('?') ? '&' : '?') + 't=' + Date.now() : ''); }, kd < 2 ? 0 : 3000); };
+  k.src = adresler[0];
 }
 
 function yukle(){
@@ -85,6 +90,8 @@ function yukle(){
   v.load();
 }
 v.addEventListener('loadeddata', () => {
+  videoAcik = true;
+  const ifr = document.querySelector('.kutu iframe'); if(ifr) ifr.remove();
   $('bekle').hidden = true; $('kapak').hidden = true; v.hidden = false;
   v.play().catch(()=>{});
   kaydet.href = kaynak; kaydet.setAttribute('download', ad); kaydet.removeAttribute('aria-disabled');
@@ -96,6 +103,13 @@ v.addEventListener('error', () => {
   if(deneme === 3){
     kaydet.href = kaynak; kaydet.setAttribute('download', ad); kaydet.removeAttribute('aria-disabled');
     $('bekleYazi').textContent = 'Önizleme yükleniyor… Beklemeden “Videoyu Kaydet” ile indirebilirsin.';
+  }
+  // Doğrudan oynatma olmuyorsa Google Drive'ın kendi oynatıcısı gösterilir
+  if(deneme === 5 && !videoAcik){
+    const ifr = document.createElement('iframe');
+    ifr.src = 'https://drive.google.com/file/d/' + encodeURIComponent(id) + '/preview';
+    ifr.allow = 'autoplay; fullscreen'; ifr.title = 'Video';
+    document.querySelector('.kutu').appendChild(ifr);
   }
   if(deneme > 60){ // ~4 dakika
     $('bekleYazi').textContent = 'Video şu an açılamadı. Biraz sonra QR kodu tekrar okutabilirsin.';
