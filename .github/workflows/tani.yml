@@ -27,6 +27,7 @@ jobs:
         run: |
           npx --yes create-expo-app@latest cekim360 --template blank@sdk-53
           rm -f cekim360/App.tsx
+          cp kaynak/index.js cekim360/index.js
           if [ "${{ matrix.surum }}" = "temel" ]; then
             cp kaynak/temel/App.js kaynak/temel/app.json cekim360/
           else

@@ -33,6 +33,7 @@ jobs:
           npx --yes create-expo-app@latest cekim360 --template blank@sdk-53
           rm -f cekim360/App.tsx
           cp kaynak/App.js kaynak/app.json cekim360/
+          cp kaynak/index.js cekim360/index.js
           if [ "${{ inputs.tani }}" = "true" ]; then
             echo "TANI SÜRÜMÜ derleniyor"
             cp kaynak/Tani.js cekim360/App.js
