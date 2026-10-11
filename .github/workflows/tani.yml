@@ -1,0 +1,87 @@
+# Sorun ayırma derlemesi: iki test sürümünü aynı anda üretir.
+#  - temel      : ek parça içermeyen en basit uygulama (derleme/imzalama yöntemini test eder)
+#  - eskimimari : tanı ekranı, React Native yeni mimarisi kapalı (kamera kütüphanesi uyumunu test eder)
+name: Tani Derlemesi
+
+on:
+  workflow_dispatch:
+
+jobs:
+  derle:
+    runs-on: macos-15
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        surum: [temel, eskimimari]
+    env:
+      CI: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Expo projesini oluştur
+        run: |
+          npx --yes create-expo-app@latest cekim360 --template blank@sdk-53
+          rm -f cekim360/App.tsx
+          if [ "${{ matrix.surum }}" = "temel" ]; then
+            cp kaynak/temel/App.js kaynak/temel/app.json cekim360/
+          else
+            cp kaynak/app.json cekim360/app.json
+            cp kaynak/Tani.js cekim360/App.js
+            python3 - <<'PY'
+          import json
+          p = 'cekim360/app.json'
+          d = json.load(open(p))
+          d['expo']['newArchEnabled'] = False
+          d['expo']['ios']['infoPlist']['CFBundleDisplayName'] = '360 Tanı'
+          json.dump(d, open(p, 'w'), ensure_ascii=False, indent=2)
+          PY
+          fi
+          cat cekim360/app.json
+
+      - name: Paketleri kur
+        if: matrix.surum == 'eskimimari'
+        working-directory: cekim360
+        run: |
+          npm install react-native-vision-camera@4
+          npx expo install @react-native-async-storage/async-storage expo-keep-awake expo-network
+
+      - name: iOS projesini hazırla
+        working-directory: cekim360
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Derle (imzasız)
+        working-directory: cekim360/ios
+        run: |
+          WS=$(ls -d *.xcworkspace | head -n 1)
+          SCHEME="${WS%.xcworkspace}"
+          xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/uygulama.xcarchive" archive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" > "$RUNNER_TEMP/derleme.log" 2>&1 || true
+          tail -n 30 "$RUNNER_TEMP/derleme.log"
+          test -d "$RUNNER_TEMP/uygulama.xcarchive/Products/Applications"
+
+      - name: Hata özeti (sadece hata olursa)
+        if: failure()
+        run: grep -nE "error:|Error:|fatal|failed" "$RUNNER_TEMP/derleme.log" | grep -v warning | tail -n 60 || true
+
+      - name: IPA dosyasını oluştur
+        run: |
+          mkdir -p Payload
+          cp -R "$RUNNER_TEMP"/uygulama.xcarchive/Products/Applications/*.app Payload/
+          APP=$(ls -d Payload/*.app)
+          ls -lh "$APP/main.jsbundle"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$APP/Info.plist"
+          zip -qry "${{ matrix.surum }}.ipa" Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.surum }}-ipa
+          path: ${{ matrix.surum }}.ipa
+          retention-days: 30

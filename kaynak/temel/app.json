@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "Temel360",
+    "slug": "temel360",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "ios": {
+      "bundleIdentifier": "com.mertdikici.temel360",
+      "infoPlist": { "CFBundleDisplayName": "360 Temel", "ITSAppUsesNonExemptEncryption": false }
+    }
+  }
+}
