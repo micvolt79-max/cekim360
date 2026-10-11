@@ -104,12 +104,10 @@ v.addEventListener('error', () => {
     kaydet.href = kaynak; kaydet.setAttribute('download', ad); kaydet.removeAttribute('aria-disabled');
     $('bekleYazi').textContent = 'Önizleme yükleniyor… Beklemeden “Videoyu Kaydet” ile indirebilirsin.';
   }
-  // Doğrudan oynatma olmuyorsa Google Drive'ın kendi oynatıcısı gösterilir
+  // Tarayıcı Drive videosunu sayfada oynatamıyorsa bekleme yerine kapak ve indirme yönlendirmesi kalır
   if(deneme === 5 && !videoAcik){
-    const ifr = document.createElement('iframe');
-    ifr.src = 'https://drive.google.com/file/d/' + encodeURIComponent(id) + '/preview';
-    ifr.allow = 'autoplay; fullscreen'; ifr.title = 'Video';
-    document.querySelector('.kutu').appendChild(ifr);
+    $('bekle').querySelector('.cark').hidden = true;
+    $('bekleYazi').textContent = 'Videon hazır! Aşağıdaki “Videoyu Kaydet” ile telefonuna indir.';
   }
   if(deneme > 60){ // ~4 dakika
     $('bekleYazi').textContent = 'Video şu an açılamadı. Biraz sonra QR kodu tekrar okutabilirsin.';
