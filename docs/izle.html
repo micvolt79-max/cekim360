@@ -79,6 +79,11 @@ v.addEventListener('loadeddata', () => {
 });
 v.addEventListener('error', () => {
   deneme++;
+  // Tarayıcı videoyu sayfada oynatamasa bile dosya indirilebilir: 3 denemeden sonra düğmeyi aç
+  if(deneme === 3){
+    kaydet.href = kaynak; kaydet.setAttribute('download', ad); kaydet.removeAttribute('aria-disabled');
+    $('bekleYazi').textContent = 'Önizleme yükleniyor… Beklemeden “Videoyu Kaydet” ile indirebilirsin.';
+  }
   if(deneme > 60){ // ~4 dakika
     $('bekleYazi').textContent = 'Video şu an açılamadı. Biraz sonra QR kodu tekrar okutabilirsin.';
     return;
