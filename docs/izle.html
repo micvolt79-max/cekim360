@@ -22,6 +22,8 @@ h1{font-family:var(--display);font-weight:700;font-size:22px;margin:4px 0 0;text
 .kutu{position:relative;width:100%;aspect-ratio:9/16;max-height:70vh;border-radius:18px;overflow:hidden;background:var(--panel);border:1px solid var(--line)}
 video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
 .bekle{position:absolute;inset:0;display:grid;place-items:center;padding:24px;color:var(--muted);line-height:1.5}
+.kapak{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.bekle.ustte{background:linear-gradient(transparent 45%,rgba(20,16,28,.85));place-items:end center;color:var(--fg)}
 .cark{width:42px;height:42px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);margin:0 auto 14px;animation:don 1s linear infinite}
 @keyframes don{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.cark{animation:none}}
@@ -36,6 +38,7 @@ video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
 <main>
   <h1 id="marka">360 Videon</h1>
   <div class="kutu">
+    <img class="kapak" id="kapak" alt="" hidden>
     <video id="vid" playsinline loop muted autoplay controls preload="auto" hidden></video>
     <div class="bekle" id="bekle"><div><div class="cark" aria-hidden="true"></div><span id="bekleYazi">Videon hazırlanıyor, birkaç saniye sürebilir…</span></div></div>
   </div>
@@ -66,13 +69,23 @@ $('ipucu').textContent = iphone
     ? 'Videoyu Kaydet\'e dokun, video telefonuna indirilir. Galeri veya İndirilenler klasöründe bulabilirsin.'
     : 'Videoyu Kaydet\'e dokun, video cihazına indirilir.';
 
+// Kapak resmi: video yüklenene kadar misafir kendi görüntüsünü görür (Drive'a videodan önce yüklenir)
+const kapakId = p.get('p');
+if(kapakId){
+  const k = $('kapak'), kapakAdres = 'https://drive.usercontent.google.com/download?id=' + encodeURIComponent(kapakId) + '&export=view';
+  let kd = 0;
+  k.onload = () => { k.hidden = false; $('bekle').classList.add('ustte'); v.poster = k.src; };
+  k.onerror = () => { if(++kd < 30) setTimeout(() => { k.src = kapakAdres + '&t=' + Date.now(); }, 3000); };
+  k.src = kapakAdres;
+}
+
 function yukle(){
   // Video henüz Drive'a yüklenmediyse hata verir; birkaç saniyede bir yeniden denenir
   v.src = kaynak + '&t=' + Date.now();
   v.load();
 }
 v.addEventListener('loadeddata', () => {
-  $('bekle').hidden = true; v.hidden = false;
+  $('bekle').hidden = true; $('kapak').hidden = true; v.hidden = false;
   v.play().catch(()=>{});
   kaydet.href = kaynak; kaydet.setAttribute('download', ad); kaydet.removeAttribute('aria-disabled');
   onceden_indir();
