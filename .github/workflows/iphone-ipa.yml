@@ -24,7 +24,8 @@ jobs:
 
       - name: Expo projesini oluştur
         run: |
-          npx --yes create-expo-app@latest cekim360 --template blank
+          # Expo SDK 53'e sabitlendi: yeni sürümlerdeki ExpoModulesJSI derleme adımı imzasız derlemede hata veriyor
+          npx --yes create-expo-app@latest cekim360 --template blank@sdk-53
           rm -f cekim360/App.tsx
           cp kaynak/App.js kaynak/app.json cekim360/
 
@@ -47,8 +48,15 @@ jobs:
           xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/uygulama.xcarchive" archive \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" | tail -n 80
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" > "$RUNNER_TEMP/derleme.log" 2>&1 || true
+          tail -n 40 "$RUNNER_TEMP/derleme.log"
           test -d "$RUNNER_TEMP/uygulama.xcarchive/Products/Applications"
+
+      - name: Hata özeti (sadece hata olursa)
+        if: failure()
+        run: |
+          echo "----- Hata satırları -----"
+          grep -nE "error:|Error:|ERROR|fatal|failed" "$RUNNER_TEMP/derleme.log" | grep -v "warning" | tail -n 60 || true
 
       - name: IPA dosyasını oluştur
         run: |
