@@ -33,7 +33,7 @@ jobs:
         working-directory: cekim360
         run: |
           npm install react-native-vision-camera@4
-          npx expo install @react-native-async-storage/async-storage expo-keep-awake
+          npx expo install @react-native-async-storage/async-storage expo-keep-awake expo-network
 
       - name: iOS projesini hazırla
         working-directory: cekim360

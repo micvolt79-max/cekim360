@@ -30,6 +30,51 @@ try {
 } catch (e) {
   AsyncStorage = null; // ayarlar kaydedilmez ama uygulama çalışır
 }
+let Network = null;
+try {
+  Network = require('expo-network');
+} catch (e) {
+  Network = null; // otomatik bulma yalnızca hotspot aralığını tarar
+}
+
+// ---- Laptoptaki programı ağda otomatik bulma ----
+const PORT = 8000;
+async function laptopMu(adres, ms = 900) {
+  const kontrol = new AbortController();
+  const zaman = setTimeout(() => kontrol.abort(), ms);
+  try {
+    const r = await fetch(`http://${adres}/api/son`, { signal: kontrol.signal });
+    if (!r.ok) return false;
+    const j = await r.json();
+    return j && typeof j === 'object' && 'marka' in j; // bizim programın cevabı
+  } catch (e) {
+    return false;
+  } finally {
+    clearTimeout(zaman);
+  }
+}
+async function laptopBul(kayitli) {
+  const adaylar = [];
+  const ekle = (a) => { if (a && !adaylar.includes(a)) adaylar.push(a); };
+  ekle(kayitli);
+  // iPhone hotspot'u (Kişisel Erişim Noktası) her zaman 172.20.10.x aralığını kullanır
+  for (let i = 2; i <= 14; i++) ekle(`172.20.10.${i}:${PORT}`);
+  // Telefonun bağlı olduğu Wi-Fi ağı
+  let ip = null;
+  try { ip = Network ? await Network.getIpAddressAsync() : null; } catch (e) {}
+  if (ip && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)) {
+    const on = ip.split('.').slice(0, 3).join('.');
+    for (let i = 1; i <= 254; i++) if (`${on}.${i}` !== ip) ekle(`${on}.${i}:${PORT}`);
+  }
+  for (let i = 0; i < adaylar.length; i += 24) {
+    const grup = adaylar.slice(i, i + 24);
+    const sonuc = await Promise.all(grup.map((a) => laptopMu(a).then((ok) => (ok ? a : null))));
+    const bulunan = sonuc.find(Boolean);
+    if (bulunan) return bulunan;
+  }
+  return null;
+}
+
 const zamanAsimi = (p, ms) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('zaman aşımı')), ms))]);
 
 const RENK = { bg: '#000', panel: 'rgba(20,16,28,0.85)', line: '#3a3248', fg: '#f4eee6', muted: '#a99fb5', accent: '#e6c48a', ink: '#2a1f0e', rec: '#e5484d', ok: '#8fd19e', err: '#f0938a' };
@@ -106,6 +151,9 @@ function App() {
   const [durum, setDurum] = useState({ metin: '', tur: '' });
   const [ayarAcik, setAyarAcik] = useState(false);
   const [adresTaslak, setAdresTaslak] = useState('');
+  const [baglanti, setBaglanti] = useState('araniyor'); // araniyor | bagli | yok
+  const adresRef = useRef(adres);
+  adresRef.current = adres;
 
   // Kayıtlı ayarları yükle
   useEffect(() => {
@@ -126,6 +174,24 @@ function App() {
   const kaydet = (anahtar, deger) => {
     try { AsyncStorage?.setItem(anahtar, String(deger)).catch(() => {}); } catch (e) {}
   };
+
+  // Laptopu bul: önce kayıtlı adres, olmazsa ağı tara. Bulunan adresi kaydeder.
+  async function otomatikBaglan() {
+    setBaglanti('araniyor');
+    const simdiki = adresRef.current;
+    if (await laptopMu(simdiki, 1500)) { setBaglanti('bagli'); return simdiki; }
+    const bulunan = await laptopBul(simdiki);
+    if (bulunan) {
+      setAdres(bulunan);
+      adresRef.current = bulunan;
+      kaydet('adres', bulunan);
+      setBaglanti('bagli');
+      return bulunan;
+    }
+    setBaglanti('yok');
+    return null;
+  }
+  useEffect(() => { if (hazir) otomatikBaglan(); }, [hazir]);
 
   // Seçilebilir lensler: önce geniş açı, sonra normal, yakın, ön
   const lensler = useMemo(() => {
@@ -193,46 +259,46 @@ function App() {
       setDurum({ metin: 'Video dosyası okunamadı.', tur: 'err' });
       return;
     }
-    await new Promise((resolve) => {
+    let sonuc = await yukle(blob, adresRef.current);
+    if (sonuc.tur === 'ag') {
+      // Bağlantı koptu: laptopu yeniden ara ve bir kez daha dene
+      setDurum({ metin: 'Laptop aranıyor…', tur: '' });
+      const yeni = await otomatikBaglan();
+      if (yeni) {
+        setDurum({ metin: 'Laptopa gönderiliyor…', tur: '' });
+        sonuc = await yukle(blob, yeni);
+      }
+    }
+    if (sonuc.tur === 'ok') {
+      setIlerleme(1);
+      setBaglanti('bagli');
+      setDurum({ metin: 'Gönderildi, kioskta oynuyor.', tur: 'ok' });
+    } else if (sonuc.tur === 'sunucu') {
+      setDurum({ metin: 'Gönderilemedi: ' + sonuc.mesaj, tur: 'err' });
+    } else {
+      setBaglanti('yok');
+      setDurum({ metin: 'Laptop bulunamadı. Program açık mı, telefon ve laptop aynı ağda mı?', tur: 'err' });
+    }
+  }
+
+  function yukle(blob, hedef) {
+    return new Promise((resolve) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `http://${adres}/api/yukle`);
+      xhr.open('POST', `http://${hedef}/api/yukle`);
       xhr.setRequestHeader('Content-Type', 'video/mp4');
       xhr.setRequestHeader('X-FPS', String(gercekFps)); // ağır çekim adımı için
       xhr.timeout = 120000;
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) setIlerleme(e.loaded / e.total);
       };
-      xhr.onload = () => {
-        if (xhr.status === 200) {
-          setIlerleme(1);
-          setDurum({ metin: 'Gönderildi, kioskta oynuyor.', tur: 'ok' });
-        } else {
-          setDurum({ metin: 'Gönderilemedi: ' + xhr.responseText, tur: 'err' });
-        }
-        resolve();
-      };
-      const hata = () => {
-        setDurum({ metin: 'Laptopa ulaşılamadı. Program açık mı, adres doğru mu, aynı Wi-Fi\'da mısın?', tur: 'err' });
-        resolve();
-      };
-      xhr.onerror = hata;
-      xhr.ontimeout = hata;
+      xhr.onload = () => resolve(xhr.status === 200 ? { tur: 'ok' } : { tur: 'sunucu', mesaj: xhr.responseText });
+      xhr.onerror = () => resolve({ tur: 'ag' });
+      xhr.ontimeout = () => resolve({ tur: 'ag' });
       xhr.send(blob);
     });
   }
 
-  async function baglantiTest(deneAdres) {
-    const kontrol = new AbortController();
-    const zaman = setTimeout(() => kontrol.abort(), 4000);
-    try {
-      const r = await fetch(`http://${deneAdres}/api/son`, { signal: kontrol.signal });
-      return r.ok;
-    } catch (e) {
-      return false;
-    } finally {
-      clearTimeout(zaman);
-    }
-  }
+  const baglantiTest = (deneAdres) => laptopMu(deneAdres, 4000);
 
   // ---------- Ekranlar ----------
   if (!hazir) {
@@ -291,6 +357,20 @@ function App() {
         </Pressable>
       </View>
 
+      {/* Laptop bağlantı durumu */}
+      <View style={s.baglantiSatir}>
+        <Pressable
+          style={[s.chip, s.kayitChip]}
+          disabled={mesgul || baglanti === 'araniyor'}
+          onPress={otomatikBaglan}
+        >
+          <View style={[s.nokta, { backgroundColor: baglanti === 'bagli' ? RENK.ok : baglanti === 'yok' ? RENK.err : RENK.accent }]} />
+          <Text style={s.chipYazi}>
+            {baglanti === 'bagli' ? 'Laptop bağlı' : baglanti === 'yok' ? 'Laptop bulunamadı · Tekrar dene' : 'Laptop aranıyor…'}
+          </Text>
+        </Pressable>
+      </View>
+
       {sayac > 0 && <View style={s.geriKutu} pointerEvents="none"><Text style={s.geriYazi}>{sayac}</Text></View>}
 
       {/* Alt kontroller */}
@@ -333,14 +413,15 @@ function App() {
         taslak={adresTaslak}
         setTaslak={setAdresTaslak}
         kapat={() => setAyarAcik(false)}
-        kaydetAdres={(a) => { setAdres(a); kaydet('adres', a); setAyarAcik(false); }}
+        kaydetAdres={(a) => { setAdres(a); adresRef.current = a; kaydet('adres', a); setAyarAcik(false); otomatikBaglan(); }}
         test={baglantiTest}
+        bul={() => laptopBul(adresRef.current)}
       />
     </View>
   );
 }
 
-function AyarEkrani({ acik, taslak, setTaslak, kapat, kaydetAdres, test }) {
+function AyarEkrani({ acik, taslak, setTaslak, kapat, kaydetAdres, test, bul }) {
   const [sonuc, setSonuc] = useState('');
   const temiz = (a) => a.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
   return (
@@ -348,7 +429,17 @@ function AyarEkrani({ acik, taslak, setTaslak, kapat, kaydetAdres, test }) {
       <View style={s.modalArka}>
         <View style={s.modal}>
           <Text style={s.modalBaslik}>Laptop adresi</Text>
-          <Text style={s.aciklama}>Laptoptaki siyah pencerede yazan "Kiosk ekranı" adresini, başındaki http:// olmadan yaz.</Text>
+          <Text style={s.aciklama}>Uygulama laptopu genelde kendisi bulur. Bulamazsa "Otomatik bul"a bas ya da laptoptaki siyah pencerede yazan "Kiosk ekranı" adresini, başındaki http:// olmadan yaz.</Text>
+          <Pressable
+            style={s.anaButon}
+            onPress={async () => {
+              setSonuc('Laptop aranıyor…');
+              const a = await bul();
+              if (a) { setTaslak(a); setSonuc('Bağlantı tamam: ' + a); } else setSonuc('Laptop bulunamadı. Program açık mı, aynı ağda mısınız?');
+            }}
+          >
+            <Text style={s.anaButonYazi}>Otomatik bul</Text>
+          </Pressable>
           <TextInput
             value={taslak}
             onChangeText={(t) => { setTaslak(t); setSonuc(''); }}
@@ -359,7 +450,7 @@ function AyarEkrani({ acik, taslak, setTaslak, kapat, kaydetAdres, test }) {
             keyboardType="numbers-and-punctuation"
             style={s.girdi}
           />
-          {!!sonuc && <Text style={[s.durum, { color: sonuc.startsWith('Bağlantı') ? RENK.ok : RENK.err }]}>{sonuc}</Text>}
+          {!!sonuc && <Text style={[s.durum, { color: sonuc.startsWith('Bağlantı') ? RENK.ok : sonuc.endsWith('…') ? RENK.muted : RENK.err }]}>{sonuc}</Text>}
           <View style={s.modalButonlar}>
             <Pressable style={s.ikincilButon} onPress={async () => { setSonuc('Deneniyor…'); setSonuc((await test(temiz(taslak))) ? 'Bağlantı tamam.' : 'Laptopa ulaşılamadı.'); }}>
               <Text style={s.ikincilYazi}>Bağlantıyı dene</Text>
@@ -378,6 +469,7 @@ function AyarEkrani({ acik, taslak, setTaslak, kapat, kaydetAdres, test }) {
 const s = StyleSheet.create({
   tam: { flex: 1, backgroundColor: RENK.bg },
   orta: { alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 },
+  baglantiSatir: { position: 'absolute', top: 100, left: 16, right: 16, flexDirection: 'row', justifyContent: 'center' },
   ust: { position: 'absolute', top: 54, left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   chip: { backgroundColor: RENK.panel, borderColor: RENK.line, borderWidth: 1, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14 },
   chipYazi: { color: RENK.fg, fontSize: 14, fontWeight: '600' },
