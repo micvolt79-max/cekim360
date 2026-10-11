@@ -6,6 +6,11 @@ name: iPhone IPA
 
 on:
   workflow_dispatch:
+    inputs:
+      tani:
+        description: "Tanı sürümü (sadece test ekranı, sorun ararken kullanılır)"
+        type: boolean
+        default: false
 
 jobs:
   derle:
@@ -28,6 +33,10 @@ jobs:
           npx --yes create-expo-app@latest cekim360 --template blank@sdk-53
           rm -f cekim360/App.tsx
           cp kaynak/App.js kaynak/app.json cekim360/
+          if [ "${{ inputs.tani }}" = "true" ]; then
+            echo "TANI SÜRÜMÜ derleniyor"
+            cp kaynak/Tani.js cekim360/App.js
+          fi
 
       - name: Paketleri kur
         working-directory: cekim360
