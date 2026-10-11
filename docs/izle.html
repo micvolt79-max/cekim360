@@ -40,7 +40,7 @@ video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
     <div class="bekle" id="bekle"><div><div class="cark" aria-hidden="true"></div><span id="bekleYazi">Videon hazırlanıyor, birkaç saniye sürebilir…</span></div></div>
   </div>
   <a class="dugme" id="kaydet" href="#" aria-disabled="true">Videoyu Kaydet</a>
-  <p class="ipucu" id="ipucu">iPhone'da: Videoyu Kaydet'e dokun, açılan menüden “Videoyu Kaydet”i seç.</p>
+  <p class="ipucu" id="ipucu">Videoyu Kaydet'e dokun, video telefonuna kaydedilir.</p>
 </main>
 
 <script>
@@ -56,6 +56,15 @@ let dosya = null;     // paylaşım menüsü için önceden indirilen video
 let deneme = 0;
 
 const v = $('vid'), kaydet = $('kaydet');
+
+// Telefona göre yönlendirme: iPhone paylaşım menüsüyle Fotoğraflar'a, Android doğrudan indirerek kaydeder
+const iphone = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const android = /Android/i.test(navigator.userAgent);
+$('ipucu').textContent = iphone
+  ? 'Videoyu Kaydet\'e dokun, açılan menüden “Videoyu Kaydet”i seç. Video Fotoğraflar\'a kaydedilir.'
+  : android
+    ? 'Videoyu Kaydet\'e dokun, video telefonuna indirilir. Galeri veya İndirilenler klasöründe bulabilirsin.'
+    : 'Videoyu Kaydet\'e dokun, video cihazına indirilir.';
 
 function yukle(){
   // Video henüz Drive'a yüklenmediyse hata verir; birkaç saniyede bir yeniden denenir
@@ -81,7 +90,7 @@ v.addEventListener('error', () => {
 // Tarayıcı izin vermezse düğme normal indirme linki olarak çalışır.
 async function onceden_indir(){
   try{
-    if(!navigator.canShare) return;
+    if(!iphone || !navigator.canShare) return; // Android ve bilgisayarda doğrudan indirme daha pratik
     const r = await fetch(kaynak);
     if(!r.ok) return;
     const f = new File([await r.blob()], ad, {type:'video/mp4'});
